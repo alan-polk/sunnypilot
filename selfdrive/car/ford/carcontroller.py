@@ -8,7 +8,7 @@ from openpilot.common.realtime import DT_CTRL
 from opendbc.can.packer import CANPacker
 from openpilot.selfdrive.car import apply_std_steer_angle_limits
 from openpilot.selfdrive.car.ford import fordcan
-from openpilot.selfdrive.car.ford.values import CANFD_CAR, CarControllerParams, FordFlagsSP
+from openpilot.selfdrive.car.ford.values import CANFD_CAR, CarControllerParams
 from openpilot.selfdrive.controls.lib.drive_helpers import V_CRUISE_MAX, CONTROL_N
 from openpilot.selfdrive.modeld.constants import ModelConstants
 
@@ -81,8 +81,15 @@ class CarController:
     self.precharge_actuate_ts = 0
 
     # Anti ping-pong parameters
-    self.max_app_curvature = 0.00005 # maximum curvature to still be considered a straightaway (for anti ping-pong purposes)
-    self.app_dampening_factor = 0.75 # how much to allow current signals for anti ping-pong
+    self.t_diffs = np.diff(ModelConstants.T_IDXS)
+    # self.desired_curvature_rate_scale = -0.07 # determined in plotjuggler to best match with `LatCtlCrv_NoRate2_Actl`
+    self.future_lookup_time_diff = 0.5
+    self.future_lookup_time = CP.steerActuatorDelay
+    self.future_curvature_time_v = [self.future_lookup_time, self.future_lookup_time_diff + self.future_lookup_time] # how many seconds in the future to use predicted curvature
+    self.future_curvature_time_bp = [5.0, 30.0] # corresponding speeds in m/s in [0, ~40] in 1.0 increments
+    self.max_app_curvature = 0.00028 # maximum curvature to still be considered a straightaway (for anti ping-pong purposes)
+    self.app_filter_factor = 0.25 # how much to allow current signals for anti ping-pong
+    self.app_damp_factor = 0.75 # how much to mute all signals for anti ping-pong
 
     # Activates at self.brake_actutator_target - self.brake_actutator_stdDevLow
     self.brake_actutator_stdDevLow = 0.2 # Default: -0.5
@@ -172,22 +179,22 @@ class CarController:
           # compute curvature from model predicted lateral acceleration
           future_time = interp(CS.out.vEgo, self.future_curvature_time_bp, self.future_curvature_time_v)
           lat_accel = interp(future_time, ModelConstants.T_IDXS, model_data.acceleration.y)
-          apply_curvature = lat_accel / (max(0.01,CS.out.vEgo) ** 2)
-          apply_curvature = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
+          # apply_curvature = lat_accel / (max(0.01,CS.out.vEgo) ** 2)
+          # apply_curvature = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
 
           # build an array to hold future curvatures, to help with straigh away detection
           curvatures = np.array(model_data.acceleration.y) / (CS.out.vEgo ** 2)
           # extract predicted curvature for 1.0 seconds, 2.0 seconds, and 3.0 seconds into the future
-          curvature_1 = interp(1, ModelConstants.T_IDXS, curvatures)
-          curvature_2 = interp(2, ModelConstants.T_IDXS, curvatures)
-          curvature_3 = interp(3, ModelConstants.T_IDXS, curvatures)  
+          curvature_1 = abs(interp(1, ModelConstants.T_IDXS, curvatures))
+          curvature_2 = abs(interp(2, ModelConstants.T_IDXS, curvatures))
+          curvature_3 = abs(interp(3, ModelConstants.T_IDXS, curvatures))  
 
         # equate velocity
         vEgoRaw = CS.out.vEgoRaw
 
         if vEgoRaw > 24.56:
-          if apply_curvature < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
-              apply_curvature = (apply_curvature * self.app_dampening_factor) + (self.apply_curvature_last * (1 - self.app_dampening_factor)) 
+          if abs(apply_curvature) < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
+              apply_curvature = ((apply_curvature * self.app_filter_factor) + (self.apply_curvature_last * (1 - self.app_filter_factor))) * (self.app_damp_factor) 
       else:
         apply_curvature = 0.
 
@@ -224,8 +231,19 @@ class CarController:
       if not CC.longActive or gas < CarControllerParams.MIN_GAS:
         gas = CarControllerParams.INACTIVE_GAS
       stopping = CC.actuators.longControlState == LongCtrlState.stopping
-      can_sends.append(fordcan.create_acc_msg(self.packer, self.CAN, CC.longActive, gas, accel, stopping, v_ego_kph=V_CRUISE_MAX))
+      
+      precharge_actuate, brake_actuate = actuators_calc(self, accel)
+      brake = accel
+      if brake < 0 and brake_actuate:
+        brake = interp(accel, [ CarControllerParams.ACCEL_MIN, self.brake_converge_at, self.brake_clip], [CarControllerParams.ACCEL_MIN, self.brake_converge_at, self.brake_0_point])
 
+      # Calculate targetSpeed
+      targetSpeed = clip(actuators.speed * self.target_speed_multiplier, 0, V_CRUISE_MAX)
+      if not CC.longActive and hud_control.setSpeed:
+        targetSpeed = hud_control.setSpeed
+
+      can_sends.append(fordcan.create_acc_msg(self.packer, self.CAN, CC.longActive, gas, brake, stopping, brake_actuate, precharge_actuate, v_ego_kph=targetSpeed))
+          
     ### ui ###
     send_ui = (self.main_on_last != main_on) or (self.lkas_enabled_last != CC.latActive) or (self.steer_alert_last != steer_alert)
     # send lkas ui msg at 1Hz or if ui state changes
