@@ -825,7 +825,9 @@ class Controls:
     speeds = self.sm['longitudinalPlan'].speeds
     if len(speeds):
       CC.cruiseControl.resume = self.enabled_long and CS.cruiseState.standstill and speeds[-1] > 0.1
-    CC.vCruise = float(self.v_cruise_helper.v_cruise_kph)
+
+    if len(speeds) > 0:
+      CC.actuators.speed = speeds[0]
 
     hudControl = CC.hudControl
     hudControl.setSpeed = float(self.v_cruise_helper.v_cruise_cluster_kph * CV.KPH_TO_MS)
@@ -873,7 +875,7 @@ class Controls:
     if not self.CP.passive and self.initialized:
       # send car controls over can
       now_nanos = self.can_log_mono_time if REPLAY else int(time.monotonic() * 1e9)
-      self.last_actuators, can_sends = self.CI.apply(CC, now_nanos)
+      self.last_actuators, can_sends = self.CI.apply(CC, now_nanos, model_data=self.sm['modelV2'])
       self.pm.send('sendcan', can_list_to_can_capnp(can_sends, msgtype='sendcan', valid=CS.canValid))
       CC.actuatorsOutput = self.last_actuators
       if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
