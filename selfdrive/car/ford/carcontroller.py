@@ -1,10 +1,17 @@
-from cereal import car
-from openpilot.common.numpy_fast import clip
+from openpilot.common.params import Params
+
+import numpy as np
+from cereal import car, log
+from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common.numpy_fast import clip, interp
+from openpilot.common.realtime import DT_CTRL
 from opendbc.can.packer import CANPacker
 from openpilot.selfdrive.car import apply_std_steer_angle_limits
 from openpilot.selfdrive.car.ford import fordcan
-from openpilot.selfdrive.car.ford.values import CANFD_CAR, CarControllerParams
-from openpilot.selfdrive.controls.lib.drive_helpers import V_CRUISE_MAX
+from openpilot.selfdrive.car.ford.values import CANFD_CAR, CarControllerParams, FordFlagsSP
+from openpilot.selfdrive.controls.lib.drive_helpers import V_CRUISE_MAX, CONTROL_N
+from openpilot.selfdrive.modeld.constants import ModelConstants
+
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 VisualAlert = car.CarControl.HUDControl.VisualAlert
@@ -21,6 +28,39 @@ def apply_ford_curvature_limits(apply_curvature, apply_curvature_last, current_c
 
   return clip(apply_curvature, -CarControllerParams.CURVATURE_MAX, CarControllerParams.CURVATURE_MAX)
 
+def hysteresis(current_value, old_value, target, stdDevLow: float, stdDevHigh: float):
+  if target - stdDevLow < current_value < target + stdDevHigh:
+    result = old_value
+  elif current_value <= target - stdDevLow:
+    result = 1
+  elif current_value >= target + stdDevHigh:
+    result = 0
+
+  return result
+
+def actuators_calc(self, brake):
+  ts = self.frame * DT_CTRL
+  brake_actuate = hysteresis(brake, self.brake_actuate_last, self.brake_actutator_target, self.brake_actutator_stdDevLow, self.brake_actutator_stdDevHigh)
+  self.brake_actuate_last = brake_actuate
+
+  precharge_actuate = hysteresis(brake, self.precharge_actuate_last, self.precharge_actutator_target, self.precharge_actutator_stdDevLow, self.precharge_actutator_stdDevHigh)
+  if precharge_actuate and not self.precharge_actuate_last:
+    self.precharge_actuate_ts = ts
+  elif not precharge_actuate:
+    self.precharge_actuate_ts = 0
+
+  if (
+      precharge_actuate and 
+      not brake_actuate and
+      self.precharge_actuate_ts > 0 and 
+      brake > (self.precharge_actutator_target - self.precharge_actutator_stdDevLow) and 
+      (ts - self.precharge_actuate_ts) > (200 * DT_CTRL) 
+    ):
+    precharge_actuate = False
+
+  self.precharge_actuate_last = precharge_actuate
+
+  return precharge_actuate, brake_actuate
 
 class CarController:
   def __init__(self, dbc_name, CP, VM):
@@ -34,8 +74,71 @@ class CarController:
     self.main_on_last = False
     self.lkas_enabled_last = False
     self.steer_alert_last = False
+    self.gac_tr_cluster_last = -1
+    self.gac_tr_cluster_last_ts = 0
+    self.brake_actuate_last = 0
+    self.precharge_actuate_last = 0
+    self.precharge_actuate_ts = 0
 
-  def update(self, CC, CS, now_nanos):
+    # Anti ping-pong parameters
+    self.max_app_curvature = 0.00005 # maximum curvature to still be considered a straightaway (for anti ping-pong purposes)
+    self.app_dampening_factor = 0.75 # how much to allow current signals for anti ping-pong
+
+    # Activates at self.brake_actutator_target - self.brake_actutator_stdDevLow
+    self.brake_actutator_stdDevLow = 0.2 # Default: -0.5
+
+    # Deactivates at self.brake_actutator_target + self.brake_actutator_stdDevHigh
+    self.brake_actutator_stdDevHigh = 0.1 # Default: 0
+    
+    # Activates at self.precharge_actutator_target - self.precharge_actutator_stdDevLow
+    self.precharge_actutator_stdDevLow = 0.1 # Default: -0.25
+    
+    # Deactivates at self.precharge_actutator_target + self.precharge_actutator_stdDevHigh
+    self.precharge_actutator_stdDevHigh = 0.1 # Default: 0
+    
+    self.precharge_actutator_target = -0.1
+    self.brake_0_point = 0
+    self.brake_converge_at = -1.5
+    self.testing_active = False
+    
+    # Deactivates at self.precharge_actutator_target + self.precharge_actutator_stdDevHigh
+    self.target_speed_multiplier = 1 # Default: 0
+
+    print(f'CarFingerprint: {self.CP.carFingerprint}')
+    if self.CP.carFingerprint in CANFD_CAR:
+      self.testing_active = True
+      
+      if self.CP.carFingerprint == "FORD F-150 14TH GEN":
+        print(f'Matched carFingerprint: {self.CP.carFingerprint}')
+        self.brake_actutator_target = -0.45
+        self.brake_actutator_stdDevLow = 0.05
+        self.brake_actutator_stdDevHigh = 0.45
+        self.precharge_actutator_target = -0.2
+        self.precharge_actutator_stdDevLow = 0.05
+        self.precharge_actutator_stdDevHigh = 0.2
+        
+      elif self.CP.carFingerprint == "FORD F-150 LIGHTNING 1ST GEN":
+        print(f'Matched carFingerprint: {self.CP.carFingerprint}')
+        self.brake_actutator_target = -0.45
+        self.brake_actutator_stdDevLow = 0.05
+        self.brake_actutator_stdDevHigh = 0.45
+        self.precharge_actutator_target = -0.2
+        self.precharge_actutator_stdDevLow = 0.05
+        self.precharge_actutator_stdDevHigh = 0.2
+        
+      elif self.CP.carFingerprint == "FORD MUSTANG MACH-E 1ST GEN":
+        print(f'Matched carFingerprint: {self.CP.carFingerprint}')
+        self.brake_actutator_target = -0.45
+        self.brake_actutator_stdDevLow = 0.05
+        self.brake_actutator_stdDevHigh = 0.45
+        self.precharge_actutator_target = -0.2
+        self.precharge_actutator_stdDevLow = 0.05
+        self.precharge_actutator_stdDevHigh = 0.2
+    
+    self.brake_clip = self.brake_actutator_target - self.brake_actutator_stdDevLow
+
+
+  def update(self, CC, CS, now_nanos, model_data=None):
     can_sends = []
 
     actuators = CC.actuators
@@ -64,9 +167,31 @@ class CarController:
         # apply rate limits, curvature error limit, and clip to signal range
         current_curvature = -CS.out.yawRate / max(CS.out.vEgoRaw, 0.1)
         apply_curvature = apply_ford_curvature_limits(actuators.curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
+     
+        if model_data is not None and len(model_data.orientation.x) >= CONTROL_N:
+          # compute curvature from model predicted lateral acceleration
+          future_time = interp(CS.out.vEgo, self.future_curvature_time_bp, self.future_curvature_time_v)
+          lat_accel = interp(future_time, ModelConstants.T_IDXS, model_data.acceleration.y)
+          apply_curvature = lat_accel / (max(0.01,CS.out.vEgo) ** 2)
+          apply_curvature = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
+
+          # build an array to hold future curvatures, to help with straigh away detection
+          curvatures = np.array(model_data.acceleration.y) / (CS.out.vEgo ** 2)
+          # extract predicted curvature for 1.0 seconds, 2.0 seconds, and 3.0 seconds into the future
+          curvature_1 = interp(1, ModelConstants.T_IDXS, curvatures)
+          curvature_2 = interp(2, ModelConstants.T_IDXS, curvatures)
+          curvature_3 = interp(3, ModelConstants.T_IDXS, curvatures)  
+
+        # equate velocity
+        vEgoRaw = CS.out.vEgoRaw
+
+        if vEgoRaw > 24.56:
+          if apply_curvature < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
+              apply_curvature = (apply_curvature * self.app_dampening_factor) + (self.apply_curvature_last * (1 - self.app_dampening_factor)) 
       else:
         apply_curvature = 0.
 
+      # human turn detection
       steeringPressed = CS.out.steeringPressed
       steeringAngleDeg = CS.out.steeringAngleDeg
 
@@ -77,7 +202,6 @@ class CarController:
         ramp_type = 0
 
       self.apply_curvature_last = apply_curvature
-
       
       if self.CP.carFingerprint in CANFD_CAR:
         # TODO: extended mode
