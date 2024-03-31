@@ -88,8 +88,8 @@ class CarController:
     self.future_curvature_time_v = [self.future_lookup_time, self.future_lookup_time_diff + self.future_lookup_time] # how many seconds in the future to use predicted curvature
     self.future_curvature_time_bp = [5.0, 30.0] # corresponding speeds in m/s in [0, ~40] in 1.0 increments
     self.max_app_curvature = 0.00028 # maximum curvature to still be considered a straightaway (for anti ping-pong purposes)
-    self.app_filter_factor = 0.25 # how much to allow current signals for anti ping-pong
-    self.app_damp_factor = 0.75 # how much to mute all signals for anti ping-pong
+    self.app_filter_factor = 0.45 # how much to allow current signals for anti ping-pong
+    self.app_damp_factor = 0.85 # how much to mute all signals for anti ping-pong
 
     # Activates at self.brake_actutator_target - self.brake_actutator_stdDevLow
     self.brake_actutator_stdDevLow = 0.2 # Default: -0.5
