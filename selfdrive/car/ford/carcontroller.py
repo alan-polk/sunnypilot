@@ -175,22 +175,22 @@ class CarController:
         current_curvature = -CS.out.yawRate / max(CS.out.vEgoRaw, 0.1)
         apply_curvature = apply_ford_curvature_limits(actuators.curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
      
-        if model_data is not None and len(model_data.orientation.x) >= CONTROL_N:
-          # compute curvature from model predicted lateral acceleration
-          future_time = interp(CS.out.vEgo, self.future_curvature_time_bp, self.future_curvature_time_v)
-          lat_accel = interp(future_time, ModelConstants.T_IDXS, model_data.acceleration.y)
-          # apply_curvature = lat_accel / (max(0.01,CS.out.vEgo) ** 2)
-          # apply_curvature = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
+        # equate velocity
+        vEgoRaw = CS.out.vEgoRaw
 
-          # build an array to hold future curvatures, to help with straigh away detection
+        if model_data is not None and len(model_data.orientation.x) >= CONTROL_N:
+          # compute curvature from model predicted orientation
+          future_time = 0.2 + self.future_lookup_time # 0.2 + SteerActutatorDelay
+          apply_curvature = interp(future_time, ModelConstants.T_IDXS, model_data.orientationRate.z) / vEgoRaw
+          apply_curvature = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
+
+          # build an array to hold future curvatures, to help with straight away detection
           curvatures = np.array(model_data.acceleration.y) / (CS.out.vEgo ** 2)
           # extract predicted curvature for 1.0 seconds, 2.0 seconds, and 3.0 seconds into the future
           curvature_1 = abs(interp(1, ModelConstants.T_IDXS, curvatures))
           curvature_2 = abs(interp(2, ModelConstants.T_IDXS, curvatures))
           curvature_3 = abs(interp(3, ModelConstants.T_IDXS, curvatures))  
 
-        # equate velocity
-        vEgoRaw = CS.out.vEgoRaw
 
         if vEgoRaw > 24.56:
           if abs(apply_curvature) < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
