@@ -181,8 +181,9 @@ class CarController:
         if model_data is not None and len(model_data.orientation.x) >= CONTROL_N:
           # compute curvature from model predicted orientation
           future_time = 0.2 + self.future_lookup_time # 0.2 + SteerActutatorDelay
-          apply_curvature = interp(future_time, ModelConstants.T_IDXS, model_data.orientationRate.z) / vEgoRaw
-          apply_curvature = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
+          # for now revert back to actuators.curvature because predicted curvature can't overcome the lack of path_offset
+          # apply_curvature = interp(future_time, ModelConstants.T_IDXS, model_data.orientationRate.z) / vEgoRaw
+          # apply_curvature = apply_ford_curvature_limits(apply_curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
 
           # build an array to hold future curvatures, to help with straight away detection
           curvatures = np.array(model_data.acceleration.y) / (CS.out.vEgo ** 2)
