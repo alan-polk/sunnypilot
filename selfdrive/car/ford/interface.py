@@ -23,7 +23,7 @@ class CarInterface(CarInterfaceBase):
 
     ret.radarUnavailable = candidate not in CANFD_CAR
     ret.steerControlType = car.CarParams.SteerControlType.angle
-    ret.steerActuatorDelay = 0.2
+    ret.steerActuatorDelay = 0.05
     ret.steerLimitTimer = 1.0
 
     ret.longitudinalTuning.kpBP = [0.]
