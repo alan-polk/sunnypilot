@@ -195,7 +195,7 @@ class CarController:
 
         if vEgoRaw > 24.56:
           if abs(apply_curvature) < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
-              apply_curvature = ((predicted_curvature)) # * self.app_filter_factor) + (self.apply_curvature_last * (1 - self.app_filter_factor))) * (self.app_damp_factor) 
+              apply_curvature = ((predicted_curvature + apply_curvature)/2) # * self.app_filter_factor) + (self.apply_curvature_last * (1 - self.app_filter_factor))) * (self.app_damp_factor) 
       else:
         apply_curvature = 0.
 
