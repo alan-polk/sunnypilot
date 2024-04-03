@@ -90,7 +90,7 @@ class CarController:
     self.max_app_curvature = 0.00028 # maximum curvature to still be considered a straightaway (for anti ping-pong purposes)
     self.app_filter_factor = 0.45 # how much to allow current signals for anti ping-pong
     self.app_damp_factor = 0.85 # how much to mute all signals for anti ping-pong
-    self.app_PC_percentage = 0.4 # what percentage of apply_curvature is derived from predicted curvature
+    self.app_PC_percentage = 0.6 # what percentage of apply_curvature is derived from predicted curvature
 
     # Activates at self.brake_actutator_target - self.brake_actutator_stdDevLow
     self.brake_actutator_stdDevLow = 0.2 # Default: -0.5
