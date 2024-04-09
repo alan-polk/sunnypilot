@@ -119,30 +119,30 @@ class CarController:
       
       if self.CP.carFingerprint == "FORD F-150 14TH GEN":
         print(f'Matched carFingerprint: {self.CP.carFingerprint}')
-        self.brake_actutator_target = -0.45
-        self.brake_actutator_stdDevLow = 0.05
-        self.brake_actutator_stdDevHigh = 0.45
-        self.precharge_actutator_target = -0.2
-        self.precharge_actutator_stdDevLow = 0.05
-        self.precharge_actutator_stdDevHigh = 0.2
+        self.brake_actutator_target = -0.1
+        self.brake_actutator_stdDevLow = 0.00
+        self.brake_actutator_stdDevHigh = 0.05
+        self.precharge_actutator_target = -0.1
+        self.precharge_actutator_stdDevLow = 0.0
+        self.precharge_actutator_stdDevHigh = 0.05
         
       elif self.CP.carFingerprint == "FORD F-150 LIGHTNING 1ST GEN":
         print(f'Matched carFingerprint: {self.CP.carFingerprint}')
-        self.brake_actutator_target = -0.45
-        self.brake_actutator_stdDevLow = 0.05
-        self.brake_actutator_stdDevHigh = 0.45
-        self.precharge_actutator_target = -0.2
-        self.precharge_actutator_stdDevLow = 0.05
-        self.precharge_actutator_stdDevHigh = 0.2
+        self.brake_actutator_target = -0.1
+        self.brake_actutator_stdDevLow = 0.00
+        self.brake_actutator_stdDevHigh = 0.05
+        self.precharge_actutator_target = -0.1
+        self.precharge_actutator_stdDevLow = 0.0
+        self.precharge_actutator_stdDevHigh = 0.05
         
       elif self.CP.carFingerprint == "FORD MUSTANG MACH-E 1ST GEN":
         print(f'Matched carFingerprint: {self.CP.carFingerprint}')
-        self.brake_actutator_target = -0.45
-        self.brake_actutator_stdDevLow = 0.05
-        self.brake_actutator_stdDevHigh = 0.45
-        self.precharge_actutator_target = -0.2
-        self.precharge_actutator_stdDevLow = 0.05
-        self.precharge_actutator_stdDevHigh = 0.2
+        self.brake_actutator_target = -0.1
+        self.brake_actutator_stdDevLow = 0.00
+        self.brake_actutator_stdDevHigh = 0.05
+        self.precharge_actutator_target = -0.1
+        self.precharge_actutator_stdDevLow = 0.0
+        self.precharge_actutator_stdDevHigh = 0.05
     
     self.brake_clip = self.brake_actutator_target - self.brake_actutator_stdDevLow
 
