@@ -145,7 +145,17 @@ class CarController:
         self.precharge_actutator_stdDevHigh = 0.05
     
       self.brake_clip = self.brake_actutator_target - self.brake_actutator_stdDevLow
+    
+    else:
+        self.brake_actutator_target = -0.1
+        self.brake_actutator_stdDevLow = 0.00
+        self.brake_actutator_stdDevHigh = 0.05
+        self.precharge_actutator_target = -0.1
+        self.precharge_actutator_stdDevLow = 0.0
+        self.precharge_actutator_stdDevHigh = 0.05
 
+        self.brake_clip = self.brake_actutator_target - self.brake_actutator_stdDevLow
+      
 
   def update(self, CC, CS, now_nanos, model_data=None):
     can_sends = []
