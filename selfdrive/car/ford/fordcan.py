@@ -46,7 +46,7 @@ def create_lka_msg(packer, CAN: CanBus):
   return packer.make_can_msg("Lane_Assist_Data1", CAN.main, {})
 
 
-def create_lat_ctl_msg(packer, CAN: CanBus, ramp_type: int, lat_active: bool, path_offset: float, path_angle: float, curvature: float,
+def create_lat_ctl_msg(packer, CAN: CanBus, lat_active: bool, ramp_type: int, path_offset: float, path_angle: float, curvature: float,
                        curvature_rate: float):
   """
   Creates a CAN message for the Ford TJA/LCA Command.
