@@ -71,7 +71,7 @@ class CarController:
     self.CAN = fordcan.CanBus(CP)
     self.frame = 0
 
-    self.precisio_type = 1
+    self.precision_type = 1
     self.apply_curvature_last = 0
     self.main_on_last = False
     self.lkas_enabled_last = False
