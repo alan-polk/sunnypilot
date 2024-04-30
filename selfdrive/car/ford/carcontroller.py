@@ -21,6 +21,39 @@ def apply_ford_curvature_limits(apply_curvature, apply_curvature_last, current_c
 
   return clip(apply_curvature, -CarControllerParams.CURVATURE_MAX, CarControllerParams.CURVATURE_MAX)
 
+def hysteresis(current_value, old_value, target, stdDevLow: float, stdDevHigh: float):
+  if target - stdDevLow < current_value < target + stdDevHigh:
+    result = old_value
+  elif current_value <= target - stdDevLow:
+    result = 1
+  elif current_value >= target + stdDevHigh:
+    result = 0
+
+  return result
+
+def actuators_calc(self, brake):
+  ts = self.frame * DT_CTRL
+  brake_actuate = hysteresis(brake, self.brake_actuate_last, self.brake_actutator_target, self.brake_actutator_stdDevLow, self.brake_actutator_stdDevHigh)
+  self.brake_actuate_last = brake_actuate
+
+  precharge_actuate = hysteresis(brake, self.precharge_actuate_last, self.precharge_actutator_target, self.precharge_actutator_stdDevLow, self.precharge_actutator_stdDevHigh)
+  if precharge_actuate and not self.precharge_actuate_last:
+    self.precharge_actuate_ts = ts
+  elif not precharge_actuate:
+    self.precharge_actuate_ts = 0
+
+  if (
+      precharge_actuate and 
+      not brake_actuate and
+      self.precharge_actuate_ts > 0 and 
+      brake > (self.precharge_actutator_target - self.precharge_actutator_stdDevLow) and 
+      (ts - self.precharge_actuate_ts) > (200 * DT_CTRL) 
+    ):
+    precharge_actuate = False
+
+  self.precharge_actuate_last = precharge_actuate
+
+  return precharge_actuate, brake_actuate
 
 class CarController:
   def __init__(self, dbc_name, CP, VM):
@@ -30,13 +63,57 @@ class CarController:
     self.CAN = fordcan.CanBus(CP)
     self.frame = 0
 
+   self.precision_type = 1
     self.apply_curvature_last = 0
     self.main_on_last = False
     self.lkas_enabled_last = False
     self.steer_alert_last = False
-    self.path_angle = 0.
-    self.path_offset = 0.
-    self.curvature_rate = 0.
+    self.gac_tr_cluster_last = -1
+    self.gac_tr_cluster_last_ts = 0
+    self.brake_actuate_last = 0
+    self.precharge_actuate_last = 0
+    self.precharge_actuate_ts = 0
+
+    # Anti ping-pong parameters
+    self.t_diffs = np.diff(ModelConstants.T_IDXS)
+    # self.desired_curvature_rate_scale = -0.07 # determined in plotjuggler to best match with `LatCtlCrv_NoRate2_Actl`
+    self.future_lookup_time_diff = 0.5
+    self.future_lookup_time = CP.steerActuatorDelay
+    self.future_curvature_time_v = [self.future_lookup_time, self.future_lookup_time_diff + self.future_lookup_time] # how many seconds in the future to use predicted curvature
+    self.future_curvature_time_bp = [5.0, 30.0] # corresponding speeds in m/s in [0, ~40] in 1.0 increments
+    self.max_app_curvature = 0.00028 # maximum curvature to still be considered a straightaway (for anti ping-pong purposes)
+    # self.app_filter_factor = 0.45 # how much to allow current signals for anti ping-pong
+    # self.app_damp_factor = 0.85 # how much to mute all signals for anti ping-pong
+    self.app_PC_percentage = 0.4 # what percentage of apply_curvature is derived from predicted curvature
+
+    # Activates at self.brake_actutator_target - self.brake_actutator_stdDevLow
+    self.brake_actutator_stdDevLow = 0.2 # Default: -0.5
+
+    # Deactivates at self.brake_actutator_target + self.brake_actutator_stdDevHigh
+    self.brake_actutator_stdDevHigh = 0.1 # Default: 0
+    
+    # Activates at self.precharge_actutator_target - self.precharge_actutator_stdDevLow
+    self.precharge_actutator_stdDevLow = 0.1 # Default: -0.25
+    
+    # Deactivates at self.precharge_actutator_target + self.precharge_actutator_stdDevHigh
+    self.precharge_actutator_stdDevHigh = 0.1 # Default: 0
+    
+    self.precharge_actutator_target = -0.1
+    self.brake_0_point = 0
+    self.brake_converge_at = -1.5
+    self.testing_active = False
+    
+    # Deactivates at self.precharge_actutator_target + self.precharge_actutator_stdDevHigh
+    self.target_speed_multiplier = 1 # Default: 0
+
+    self.brake_actutator_target = -0.1
+    self.brake_actutator_stdDevLow = 0.00
+    self.brake_actutator_stdDevHigh = 0.05
+    self.precharge_actutator_target = -0.1
+    self.precharge_actutator_stdDevLow = 0.0
+    self.precharge_actutator_stdDevHigh = 0.05
+
+    self.brake_clip = self.brake_actutator_target - self.brake_actutator_stdDevLow
 
   def update(self, CC, CS, now_nanos, model_data=None):
     can_sends = []
@@ -67,21 +144,51 @@ class CarController:
         # apply rate limits, curvature error limit, and clip to signal range
         current_curvature = -CS.out.yawRate / max(CS.out.vEgoRaw, 0.1)
         apply_curvature = apply_ford_curvature_limits(actuators.curvature, self.apply_curvature_last, current_curvature, CS.out.vEgoRaw)
+        self.precision_type = 1 #precise by default
+        # equate velocity
+        vEgoRaw = CS.out.vEgoRaw
+
+        if model_data is not None and len(model_data.orientation.x) >= CONTROL_N:
+          # compute curvature from model predicted orientation
+          future_time = 0.2 + self.future_lookup_time # 0.2 + SteerActutatorDelay
+          # for now revert back to actuators.curvature because predicted curvature can't overcome the lack of path_offset
+          predicted_curvature = interp(future_time, ModelConstants.T_IDXS, model_data.orientationRate.z) / vEgoRaw
+          predicted_curvature = apply_ford_curvature_limits(predicted_curvature, self.apply_curvature_last, current_curvature, vEgoRaw)
+
+          # build an array to hold future curvatures, to help with straight away detection
+          curvatures = np.array(model_data.acceleration.y) / (CS.out.vEgo ** 2)
+          # extract predicted curvature for 1.0 seconds, 2.0 seconds, and 3.0 seconds into the future
+          curvature_1 = abs(interp(1, ModelConstants.T_IDXS, curvatures))
+          curvature_2 = abs(interp(2, ModelConstants.T_IDXS, curvatures))
+          curvature_3 = abs(interp(3, ModelConstants.T_IDXS, curvatures))  
+
+
+        if vEgoRaw > 24.56:
+          if abs(apply_curvature) < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
+              apply_curvature = ((predicted_curvature * self.app_PC_percentage) + (apply_curvature * (1- self.app_PC_percentage))) 
+              self.precision_type = 0 # comfort for straight aways
       else:
         apply_curvature = 0.
 
-      self.apply_curvature_last = apply_curvature
+      # human turn detection
+      steeringPressed = CS.out.steeringPressed
+      steeringAngleDeg = CS.out.steeringAngleDeg
 
+      if steeringPressed and abs(steeringAngleDeg) > 60:
+        apply_curvature = 0
+        ramp_type = 3
+      else:
+        ramp_type = 0
+
+      self.apply_curvature_last = apply_curvature
+      
       if self.CP.carFingerprint in CANFD_CAR:
         # TODO: extended mode
         mode = 1 if CC.latActive else 0
         counter = (self.frame // CarControllerParams.STEER_STEP) % 0xF
-        if self.CP.spFlags & FordFlagsSP.SP_ENHANCED_LAT_CONTROL.value:
-          can_sends.append(fordcan.create_lat_ctl2_msg(self.packer, self.CAN, mode, self.path_offset, self.path_angle, -apply_curvature, self.curvature_rate, counter))
-        else:
-          can_sends.append(fordcan.create_lat_ctl2_msg(self.packer, self.CAN, mode, 0., 0., -apply_curvature, 0., counter))
+        can_sends.append(fordcan.create_lat_ctl2_msg(self.packer, self.CAN, mode, ramp_type, self.precision_type, 0., 0., -apply_curvature, 0., counter))
       else:
-        can_sends.append(fordcan.create_lat_ctl_msg(self.packer, self.CAN, CC.latActive, 0., 0., -apply_curvature, 0.))
+        can_sends.append(fordcan.create_lat_ctl_msg(self.packer, self.CAN, CC.latActive, ramp_type, self.precision_type, 0., 0., -apply_curvature, 0.))
 
     # send lka msg at 33Hz
     if (self.frame % CarControllerParams.LKA_STEP) == 0:
@@ -96,7 +203,18 @@ class CarController:
       if not CC.longActive or gas < CarControllerParams.MIN_GAS:
         gas = CarControllerParams.INACTIVE_GAS
       stopping = CC.actuators.longControlState == LongCtrlState.stopping
-      can_sends.append(fordcan.create_acc_msg(self.packer, self.CAN, CC.longActive, gas, accel, stopping, v_ego_kph=V_CRUISE_MAX))
+      
+      precharge_actuate, brake_actuate = actuators_calc(self, accel)
+      brake = accel
+      if brake < 0 and brake_actuate:
+        brake = interp(accel, [ CarControllerParams.ACCEL_MIN, self.brake_converge_at, self.brake_clip], [CarControllerParams.ACCEL_MIN, self.brake_converge_at, self.brake_0_point])
+
+      # Calculate targetSpeed
+      targetSpeed = clip(actuators.speed * self.target_speed_multiplier, 0, V_CRUISE_MAX)
+      if not CC.longActive and hud_control.setSpeed:
+        targetSpeed = hud_control.setSpeed
+
+      can_sends.append(fordcan.create_acc_msg(self.packer, self.CAN, CC.longActive, gas, brake, stopping, brake_actuate, precharge_actuate, v_ego_kph=targetSpeed))
 
     ### ui ###
     send_ui = (self.main_on_last != main_on) or (self.lkas_enabled_last != CC.latActive) or (self.steer_alert_last != steer_alert)
