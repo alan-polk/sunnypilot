@@ -184,7 +184,7 @@ class CarD:
 
     # send car controls over can
     now_nanos = self.can_log_mono_time if REPLAY else int(time.monotonic() * 1e9)
-    actuators_output, can_sends = self.CI.apply(CC, now_nanos)
+    actuators_output, can_sends = self.CI.apply(CC, now_nanos, model_data=self.sm['modelV2'])
     self.pm.send('sendcan', can_list_to_can_capnp(can_sends, msgtype='sendcan', valid=self.CS.canValid))
 
     return actuators_output
