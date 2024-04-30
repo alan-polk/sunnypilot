@@ -38,7 +38,7 @@ class CarController:
     self.path_offset = 0.
     self.curvature_rate = 0.
 
-  def update(self, CC, CS, now_nanos):
+  def update(self, CC, CS, now_nanos, model_data=None):
     can_sends = []
 
     actuators = CC.actuators
