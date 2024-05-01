@@ -869,8 +869,7 @@ class Controls:
         turning = abs(lac_log.desiredLateralAccel) > 1.0
         good_speed = CS.vEgo > 5
         max_torque = abs(self.last_actuators.steer) > 0.99
-        # Disabling for now as Ford has new controls for steering that causes false alarms
-        if False:
+        if undershooting and turning and good_speed and max_torque:
           lac_log.active and self.events.add(EventName.steerSaturated)
       elif lac_log.saturated:
         # TODO probably should not use dpath_points but curvature
@@ -886,7 +885,7 @@ class Controls:
           left_deviation = steering_value > 0 and dpath_points[0] < -0.20
           right_deviation = steering_value < 0 and dpath_points[0] > 0.20
           # Disabling for now as Ford has new controls for steering that causes false alarms
-          if False:
+          if left_deviation or right_deviation:
             self.events.add(EventName.steerSaturated)
 
     # Ensure no NaNs/Infs
