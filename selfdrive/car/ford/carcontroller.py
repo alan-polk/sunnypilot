@@ -155,7 +155,7 @@ class CarController:
         self.precharge_actutator_target = -0.1
         self.precharge_actutator_stdDevLow = 0.0
         self.precharge_actutator_stdDevHigh = 0.05
-        self.app_PC_percentage = 0.3 # what percentage of apply_curvature is derived from predicted curvature
+        self.app_PC_percentage = 0.35 # what percentage of apply_curvature is derived from predicted curvature
 
     self.brake_clip = self.brake_actutator_target - self.brake_actutator_stdDevLow
 
