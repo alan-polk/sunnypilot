@@ -22,7 +22,7 @@ class CarInterface(CarInterfaceBase):
   def _get_params(ret, candidate, fingerprint, car_fw, experimental_long, docs):
     ret.carName = "ford"
 
-    ret.radarUnavailable = candidate not in CANFD_CAR
+    ret.radarUnavailable = False # enable radar for all Fords (candidate not in CANFD_CAR)
     ret.steerControlType = car.CarParams.SteerControlType.angle
     ret.steerActuatorDelay = 0.05
     ret.steerLimitTimer = 1.0
