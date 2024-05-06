@@ -89,6 +89,7 @@ class CarController:
     # self.app_filter_factor = 0.45 # how much to allow current signals for anti ping-pong
     # self.app_damp_factor = 0.85 # how much to mute all signals for anti ping-pong
     self.app_PC_percentage = 0.4 # what percentage of apply_curvature is derived from predicted curvature
+    self.lane_change = False # initialize variable for capturing lane change status
 
     # Activates at self.brake_actutator_target - self.brake_actutator_stdDevLow
     self.brake_actutator_stdDevLow = 0.2 # Default: -0.5
@@ -206,11 +207,17 @@ class CarController:
           curvature_2 = abs(interp(2, ModelConstants.T_IDXS, curvatures))
           curvature_3 = abs(interp(3, ModelConstants.T_IDXS, curvatures))  
 
+          self.lane_change = model_data.meta.laneChangeState in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing)
 
         if vEgoRaw > 24.56:
           if abs(apply_curvature) < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
               apply_curvature = ((predicted_curvature * self.app_PC_percentage) + (apply_curvature * (1- self.app_PC_percentage))) 
               self.precision_type = 0 # comfort for straight aways
+  
+          if self.lane_change:
+              apply_curvature = ((predicted_curvature * self.app_PC_percentage) + (apply_curvature * (1- self.app_PC_percentage))) 
+              self.precision_type = 0 # comfort for lane change 
+      
       else:
         apply_curvature = 0.
 
