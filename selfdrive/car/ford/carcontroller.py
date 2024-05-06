@@ -207,7 +207,10 @@ class CarController:
           curvature_2 = abs(interp(2, ModelConstants.T_IDXS, curvatures))
           curvature_3 = abs(interp(3, ModelConstants.T_IDXS, curvatures))  
 
-          self.lane_change = model_data.meta.laneChangeState in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing)
+          if CC.leftBlinker or CC.rightBlinker:
+               self.lane_change = True
+          else:
+               self.lane_chamge = False
 
         if vEgoRaw > 24.56:
           if abs(apply_curvature) < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
