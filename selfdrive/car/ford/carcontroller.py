@@ -210,7 +210,7 @@ class CarController:
           if CC.leftBlinker or CC.rightBlinker:
                self.lane_change = True
           else:
-               self.lane_chamge = False
+               self.lane_change = False
 
         if vEgoRaw > 24.56:
           if abs(apply_curvature) < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
