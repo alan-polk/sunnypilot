@@ -12,6 +12,8 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 VisualAlert = car.CarControl.HUDControl.VisualAlert
+LaneChangeState = log.LaneChangeState # is lane change active
+
 
 
 def apply_ford_curvature_limits(apply_curvature, apply_curvature_last, current_curvature, v_ego_raw):
@@ -207,11 +209,9 @@ class CarController:
           curvature_2 = abs(interp(2, ModelConstants.T_IDXS, curvatures))
           curvature_3 = abs(interp(3, ModelConstants.T_IDXS, curvatures))  
 
-          if CC.leftBlinker or CC.rightBlinker:
-               self.lane_change = True
-          else:
-               self.lane_change = False
+          self.lane_change = model_data.meta.laneChangeState in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing)
 
+        
         if vEgoRaw > 24.56:
           if abs(apply_curvature) < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
               apply_curvature = ((predicted_curvature * self.app_PC_percentage) + (apply_curvature * (1- self.app_PC_percentage))) 
