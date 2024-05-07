@@ -90,7 +90,8 @@ class CarController:
     self.max_app_curvature = 0.00028 # maximum curvature to still be considered a straightaway (for anti ping-pong purposes)
     # self.app_filter_factor = 0.45 # how much to allow current signals for anti ping-pong
     # self.app_damp_factor = 0.85 # how much to mute all signals for anti ping-pong
-    self.app_PC_percentage = 0.4 # what percentage of apply_curvature is derived from predicted curvature
+    self.app_PC_percentage = 0.4 # what percentage of apply_curvature is derived from predicted curvature for straight aways
+    self.lc_PC_percentage = 0.3 # what percentaage of apply_curvature is derived from predicted curvature for lane changes
     self.lane_change = False # initialize variable for capturing lane change status
 
     # Activates at self.brake_actutator_target - self.brake_actutator_stdDevLow
@@ -218,7 +219,7 @@ class CarController:
               self.precision_type = 0 # comfort for straight aways
   
         if self.lane_change:
-            apply_curvature = ((predicted_curvature * self.app_PC_percentage) + (apply_curvature * (1- self.app_PC_percentage))) 
+            apply_curvature = ((predicted_curvature * self.lc_PC_percentage) + (apply_curvature * (1- self.lc_PC_percentage))) 
             self.precision_type = 0 # comfort for lane change 
       
       else:
