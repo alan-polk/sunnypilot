@@ -91,7 +91,7 @@ class CarController:
     # self.app_filter_factor = 0.45 # how much to allow current signals for anti ping-pong
     # self.app_damp_factor = 0.85 # how much to mute all signals for anti ping-pong
     self.app_PC_percentage = 0.4 # what percentage of apply_curvature is derived from predicted curvature for straight aways
-    self.lc_PC_percentage = 0.3 # what percentaage of apply_curvature is derived from predicted curvature for lane changes
+    self.lc_PC_percentage = 0.4 # what percentaage of apply_curvature is derived from predicted curvature for lane changes
     self.lane_change = False # initialize variable for capturing lane change status
 
     # Activates at self.brake_actutator_target - self.brake_actutator_stdDevLow
@@ -210,14 +210,19 @@ class CarController:
           curvature_2 = abs(interp(2, ModelConstants.T_IDXS, curvatures))
           curvature_3 = abs(interp(3, ModelConstants.T_IDXS, curvatures))  
 
-          self.lane_change = model_data.meta.laneChangeState in (LaneChangeState.laneChangeStarting, LaneChangeState.laneChangeFinishing)
+        # determine if a lane change is active
+        if model_data.meta.laneChangeState = 1 or model_data.meta.laneChangeState = 2:
+            self.lane_change = True
+        else:
+            self.lane_change = False
 
-        
+        # if at highway speeds, check for straight aways and apply anti ping pong logic
         if vEgoRaw > 24.56:
           if abs(apply_curvature) < self.max_app_curvature and curvature_1 < self.max_app_curvature and curvature_2 < self.max_app_curvature and curvature_3 < self.max_app_curvature:
               apply_curvature = ((predicted_curvature * self.app_PC_percentage) + (apply_curvature * (1- self.app_PC_percentage))) 
               self.precision_type = 0 # comfort for straight aways
-  
+
+        # if changing lanes, blend PC and DC to smooth out the lane change.
         if self.lane_change:
             apply_curvature = ((predicted_curvature * self.lc_PC_percentage) + (apply_curvature * (1- self.lc_PC_percentage))) 
             self.precision_type = 0 # comfort for lane change 
@@ -229,6 +234,7 @@ class CarController:
       steeringPressed = CS.out.steeringPressed
       steeringAngleDeg = CS.out.steeringAngleDeg
 
+      # if a human turn is active, reset steering to prevent windup
       if steeringPressed and abs(steeringAngleDeg) > 60:
         apply_curvature = 0
         ramp_type = 3
