@@ -217,9 +217,9 @@ class CarController:
               apply_curvature = ((predicted_curvature * self.app_PC_percentage) + (apply_curvature * (1- self.app_PC_percentage))) 
               self.precision_type = 0 # comfort for straight aways
   
-          if self.lane_change:
-              apply_curvature = ((predicted_curvature * self.app_PC_percentage) + (apply_curvature * (1- self.app_PC_percentage))) 
-              self.precision_type = 0 # comfort for lane change 
+        if self.lane_change:
+            apply_curvature = ((predicted_curvature * self.app_PC_percentage) + (apply_curvature * (1- self.app_PC_percentage))) 
+            self.precision_type = 0 # comfort for lane change 
       
       else:
         apply_curvature = 0.
